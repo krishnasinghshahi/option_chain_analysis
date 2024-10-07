@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Option Chain Analysis</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css"
+    crossorigin="anonymous" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.1.2/handlebars.min.js"></script>
+  <style>
+    .underlying-value-row {
+      border-top: 2px dashed #007bff;
+      border-bottom: 2px dashed #007bff;
+      background-color: #f8f9fa;
+      font-weight: bold;
+    }
+  </style>
+  <link rel="icon" href="data:,">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body onload="init()">
+  <div class="container-fluid">
+    <h1>Option Chain</h1>
+    <form class="inline-form">
+      <fieldset>
+        <div class="form-group-inline">
+          <label for="symbol" class="form-label">Symbol</label>
+          <select onchange="generateTbl()" name="symbol" id="symbol">
+            <option value="NIFTY">NIFTY</option>
+            <option value="BANKNIFTY">BANKNIFTY</option>
+            <option value="FINNIFTY">FINNIFTY</option>
+            <option value="MIDCPNIFTY">MIDCPNIFTY</option>
+          </select>
+          &nbsp;&nbsp;
+          <label for="expiryDate" class="form-label">Expiry Date</label>
+          <select onchange="generateTbl()" name="expiryDate" id="expiryDate"></select>
+          &nbsp;&nbsp;<span id="lastUpdated"></span>
+          &nbsp;&nbsp;Next refresh in <span id="countdown">10</span> seconds
+        </div>
+      </fieldset>
+    </form>
+    <div id="content">Loading...</div>
+  </div>
+
+  <script id="chain" type="text/x-handlebars-template">
+    <table class="table table-bordered table-striped">
+      <thead>
+        <tr>
+          <th>Interpretation</th>
+          <th>Call Volume</th>
+          <th>Call Net OI</th>
+          <th>Call change in OI</th>
+          <th>Call Price change</th>
+          <th>Call LTP</th>
+          <th>strike</th>
+          <th>Put LTP</th>
+          <th>Put Price Change</th>
+          <th>Put Change in OI</th>
+          <th>Put Net OI</th>
+          <th>Put Volume</th>
+          <th>Interpretation</th>
+          <th>PCR</th>
+          <!-- <th>PCR Indication</th> -->
+        </tr>
+      </thead>
+      <tbody>
+        {{#each option_chain}}
+          {{#if isUnderlyingValue}}
+            <tr class="underlying-value-row">
+              <td colspan="6"></td>
+              <td class="text-center"><strong>{{strikePrice}}</strong></td>
+              <td colspan="6"></td>
+            </tr>
+          {{else}}
+            <tr>
+              {{#if CE_A.trend }}
+                <td class="text-success bg-success"><i class="glyphicon glyphicon-arrow-up"></i> {{ CE_A.i }} </td>
+              {{else}}
+                <td class="text-danger bg-danger"><i class="glyphicon glyphicon-arrow-down"></i> {{ CE_A.i }}</td>
+              {{/if}}
+              <td class="text-right">{{ CE.totalTradedVolume }}</td>
+              <td class="text-right">{{ CE.openInterest }}</td>
+              {{#if CE_A.OI}}
+                <td class="text-right text-success bg-success">{{ CE.changeinOpenInterest }} <i class="glyphicon glyphicon-arrow-up"></i></td>
+              {{else }}
+                <td class="text-right text-danger bg-danger">{{ CE.changeinOpenInterest }} <i class="glyphicon glyphicon-arrow-down"></i></td>
+              {{/if}}
+              {{#if CE_A.price}}
+                <td class="text-right text-success bg-success">{{ CE.change }} <i class="glyphicon glyphicon-arrow-up"></i></td>
+              {{else}}
+                <td class="text-right text-danger bg-danger">{{ CE.change }} <i class="glyphicon glyphicon-arrow-down"></i></td>
+              {{/if}}
+              <td class="text-right">{{ CE.lastPrice }}</td>
+              <th class="text-center">{{ strikePrice }}</th>
+              <td class="text-right">{{ PE.lastPrice }}</td>
+              
+              {{#if PE_A.price}}
+                <td class="text-right text-success bg-success">{{ PE.change }} <i class="glyphicon glyphicon-arrow-up"></i></td>
+              {{else}}
+                <td class="text-right text-danger bg-danger">{{ PE.change }} <i class="glyphicon glyphicon-arrow-down"></i></td>
+              {{/if}}
+              
+              {{#if PE_A.OI}}
+                <td class="text-right text-success bg-success">{{ PE.changeinOpenInterest }} <i class="glyphicon glyphicon-arrow-up"></i></td>
+              {{else }}
+                <td class="text-right text-danger bg-danger">{{ PE.changeinOpenInterest }} <i class="glyphicon glyphicon-arrow-down"></i></td>
+              {{/if}}
+
+              <td class="text-right">{{ PE.openInterest }}</td>
+              <td class="text-right">{{ PE.totalTradedVolume }}</td>
+              {{#if PE_A.trend }}
+                <td class="text-success bg-success"><i class="glyphicon glyphicon-arrow-up"></i> {{ PE_A.i }}</td>
+              {{else}}
+                <td class="text-danger bg-danger"><i class="glyphicon glyphicon-arrow-down"></i> {{ PE_A.i }}</td>
+              {{/if}}
+              <td class="text-right">{{ formatPCR PE.openInterest CE.openInterest }}</td>
+            </tr>
+          {{/if}}
+        {{/each}}
+      </tbody>
+    </table>
+
+    <p>Developed by <a href="https://github.com/aadityatamrakar" target="_blank">Aaditya Tamrakar</a> modified by <a href="https://github.com/krishnasinghshahi" target="_blank">Krishna Singh Shahi</a></p>
+  </script>
+
+  <script>
+    Handlebars.registerHelper('formatPCR', function(peOI, ceOI) {
+      if (ceOI == 0 || peOI == 0) return 'N/A';
+      const peValue = typeof peOI === 'string' ? parseFloat(peOI.replace(/,/g, '')) : peOI;
+      const ceValue = typeof ceOI === 'string' ? parseFloat(ceOI.replace(/,/g, '')) : ceOI;
+      const pcr = peValue / ceValue;
+      return pcr.toFixed(2);
+    });
+
+    var optionChainData, lastUpdated, underlyingValue, selected_expiry, option_chain = [];
+
+    function getData(cb) {
+      return new Promise((resolve, reject) => {
+        const symbol = document.querySelector('#symbol').value;
+        fetch(`/chain?symbol=${symbol}`)
+          .then(resp => {
+            if (resp.status != 200) throw new Error('something went wrong');
+            return resp.json();
+          })
+          .then(data => {
+            optionChainData = data;
+            lastUpdated = data.records.timestamp;
+            document.querySelector('#lastUpdated').innerHTML = 'Last Updated: ' + lastUpdated;
+            resolve(optionChainData);
+          })
+          .catch(err => {
+            document.getElementById('content').innerHTML = "Error Occurred: " + err.toString();
+            reject('error');
+          });
+      });
+    }
+
+    function init() {
+      generateTbl();
+      startAutoRefresh();
+      setInterval(updateCountdown, 1000);
+    }
+
+    function generateTbl() {
+      getData().then(function (data) {
+        expiryDates = data.records.expiryDates;
+        underlyingValue = data.records.underlyingValue;
+        
+        // Get the current selected expiry date
+        let currentExpiry = document.querySelector('#expiryDate').value;
+        
+        // If there's no current selection or the selection is not in the new list, use the first date
+        if (!currentExpiry || !expiryDates.includes(currentExpiry)) {
+          selected_expiry = expiryDates[0];
+        } else {
+          selected_expiry = currentExpiry;
+        }
+        
+        fillExpiryDate(expiryDates);
+        document.querySelector('#expiryDate').value = selected_expiry;
+        
+        let option_chain = optionChainData.records.data.filter(c => {
+          return (
+              c.strikePrice <= 1000 + (parseInt(underlyingValue / 100) * 100)) &&
+            (c.strikePrice >= (parseInt(underlyingValue / 100) * 100) - 1000) &&
+            c.expiryDate == selected_expiry
+        });
+
+        option_chain = JSON.parse(JSON.stringify(option_chain)).map(optionChainAnalysis);
+
+        // Insert the underlying value row
+        const underlyingValueRow = {
+          strikePrice: underlyingValue.toFixed(2),
+          isUnderlyingValue: true
+        };
+        const insertIndex = option_chain.findIndex(item => item.strikePrice > underlyingValue);
+        option_chain.splice(insertIndex, 0, underlyingValueRow);
+
+        let context = {
+          option_chain,
+          lastUpdated,
+          underlyingValue,
+          selected_expiry
+        };
+        renderTbl(context);
+      });
+    }
+
+    function fillExpiryDate(expiryDates) {
+      let expirySelect = document.querySelector('#expiryDate');
+      expirySelect.innerHTML = expiryDates.map((c, idx) => {
+        return `<option value="${c}">${c}</option>`;
+      });
+    }
+
+    function optionChainAnalysis(strike) {
+      if (!strike.CE || !strike.PE) return strike;
+
+      strike.CE.change = strike.CE.change ? Number(strike.CE.change).toFixed(1) : '0.0';
+      strike.PE.change = strike.PE.change ? Number(strike.PE.change).toFixed(1) : '0.0';
+
+      strike.PE.openInterest = String(strike.PE.openInterest || 0).replace(/(\d)(?=(\d\d)+\d$)/g, "$1,");
+      strike.CE.openInterest = String(strike.CE.openInterest || 0).replace(/(\d)(?=(\d\d)+\d$)/g, "$1,");
+      strike.PE.totalTradedVolume = String(strike.PE.totalTradedVolume || 0).replace(/(\d)(?=(\d\d)+\d$)/g, "$1,");
+      strike.CE.totalTradedVolume = String(strike.CE.totalTradedVolume || 0).replace(/(\d)(?=(\d\d)+\d$)/g, "$1,");
+
+      strike.CE_A = {};
+      strike.PE_A = {};
+
+      strike.CE_A.price = Number(strike.CE.change) > 0 ? 1 : 0;
+      strike.CE_A.OI = Number(strike.CE.changeinOpenInterest) > 0 ? 1 : 0;
+
+      strike.PE_A.price = Number(strike.PE.change) > 0 ? 1 : 0;
+      strike.PE_A.OI = Number(strike.PE.changeinOpenInterest) > 0 ? 1 : 0;
+
+      if (strike.CE_A.price === 0 && strike.CE_A.OI === 0) strike.CE_A.i = 'Long Liquidation';
+      else if (strike.CE_A.price === 0 && strike.CE_A.OI === 1) strike.CE_A.i = 'Short Buildup';
+      else if (strike.CE_A.price === 1 && strike.CE_A.OI === 1) strike.CE_A.i = 'Short Covering';
+      else if (strike.CE_A.price === 1 && strike.CE_A.OI === 0) strike.CE_A.i = 'Long Buildup';
+
+      if (strike.PE_A.price === 0 && strike.PE_A.OI === 0) strike.PE_A.i = 'Long Liquidation';
+      else if (strike.PE_A.price === 0 && strike.PE_A.OI === 1) strike.PE_A.i = 'Short Buildup';
+      else if (strike.PE_A.price === 1 && strike.PE_A.OI === 1) strike.PE_A.i = 'Short Covering';
+      else if (strike.PE_A.price === 1 && strike.PE_A.OI === 0) strike.PE_A.i = 'Long Buildup';
+
+      strike.PE_A.trend = (strike.PE_A.i == 'Long Liquidation' || strike.PE_A.i == 'Short Buildup') ? 0 : 1;
+      strike.CE_A.trend = (strike.CE_A.i == 'Long Liquidation' || strike.CE_A.i == 'Short Buildup') ? 1 : 0;
+
+      return strike;
+    }
+
+    function renderTbl(context) {
+      var source = document.getElementById("chain").innerHTML;
+      var template = Handlebars.compile(source);
+      document.getElementById('content').innerHTML = template(context);
+    }
+
+    function startAutoRefresh() {
+      setInterval(() => {
+        generateTbl();
+        document.getElementById('countdown').textContent = '10';
+      }, 10000);
+    }
+
+    function updateCountdown() {
+      let countdown = document.getElementById('countdown');
+      let seconds = parseInt(countdown.textContent);
+      if (seconds > 0) {
+        countdown.textContent = (seconds - 1).toString();
+      }
+    }
+  </script>
+</body>
+
+</html>
